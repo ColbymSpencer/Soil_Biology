@@ -6,6 +6,7 @@ editor_options:
   chunk_output_type: console
 ---
 
+#### SETUP
 ```{r libraries}
 library(tidyverse)
 library(readxl)
@@ -20,12 +21,12 @@ data_raw <- read_excel("data for each group_2025.xlsx",
                        sheet = 'Raw Data Reformatted',
                        skip = 1) |>
             rename("plot" = 1, "landuse" = 2, "year" = 3) |>
-  mutate(year = as_factor(year)) |>
+  mutate(year = as_factor(year),
+         plot = as_factor(plot)) |>
   janitor::clean_names()
 ```
 
 ```{r clean_groups}
-#### TIDY GROUP DATA ####
 group <- group_raw |>
   ## clean multiple values per cell
   separate_longer_delim(cols = Cropland_2025,
@@ -53,6 +54,10 @@ our_group <-
   group |>
   filter(group_number == 6)
 
+```
+
+```{r}
+data_raw <- left_join(our_group, data_raw)
 ```
 
 #### SOIL PROPERTIES
