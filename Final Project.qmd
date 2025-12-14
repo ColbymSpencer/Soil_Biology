@@ -20,14 +20,15 @@ group_raw <- read_excel("data for each group_2025.xlsx",
 
 data_raw <- read_excel("data for each group_2025.xlsx",
                        sheet = 'Raw Data Reformatted',
-                       skip = 1) |>
-            mutate(year = as_factor(year),
-                   group = as_factor(group),
-                   plot = as_factor(plot)) |>
-            janitor::clean_names()
+                       skip = 1) 
+  
 ```
 
-```{r clean_groups}
+Make group data tidy - one observation per row, one variable per column, and one value per cell. Tidy data is easier to visualize and work with in R. 
+
+Rename and convert data types of the raw data for analysis.
+```{r clean_data}
+#### GROUPS ####
 group <- 
   group_raw |>
   ## clean multiple values per cell
@@ -53,19 +54,47 @@ group <-
          plot = as.factor(plot),
          landuse = tolower(landuse))
 
+#### DATA ####
+data <- 
+  data_raw |>
+  mutate(
+    # convert dtypes
+    year = as_factor(year),
+    plot = as_factor(plot)
+  ) |>
+  janitor::clean_names() |>
+  rename(
+    'c_pct' = total_c_percent,
+    'n_pct' = total_n_percent,
+    'ph' = p_h_k_cl,
+    'gmc' = grametric_moisture_content,
+    'mass_soilDry' = bulk_density_g_soil_core_with_a_diameter_and_a_depth_of_5_cm,
+    'earthworm_count' = earthworm_number_individuals_0_12_m2,
+    'earthworm_mass' = earthworm_fresh_weight_g_0_12m2,
+    'pct_loss' = material_loss_after_34_days_percent,
+    'decomp_constant' = decompostion_constant_k_d_1,
+    'microarthropods' = total_microarthropods_individuals_per_soil_core,
+    'mites' = mites_individuals_per_soil_core,
+    'springrails' = springtails_individuals_per_soil_core,
+    'others' = other_microarthropods_individuals_per_soil_core,
+    'pnp_wet' = p_nitrophenol_produced_mg_g_fresh_soil_per_hour,
+    'nematodes' = nematodes_individuals_from_50_g_fresh_soil,
+    'c_fumigated' = fumigated_c_mg_l,
+    'c_nonfumigated' = non_fumigated_c_mg_l
+  )
 
-rm(group_raw)
+```
 
+filter the data for only our groups data
+```{r filter_raw}
 group6 <- 
   group |>
   filter(group_number == 6)
 
-```
+data6 <- left_join(group6, data) |>
+  select(-group, -group_number)
 
-```{r}
-data_raw <-
-  left_join(group6, data_raw) |>
-  glimpse()
+rm(data_raw, data, group, group_raw, group6)
 ```
 
 #### SOIL PROPERTIES
@@ -77,24 +106,17 @@ convert GMC to percent (already in percent?)
 convert bulk density to g/cm3
 
 ```{r soil_properties}
-soil_properties <- 
-  data_raw |>
-  select(1:3, total_c_percent:bulk_density_g_cm3) |>
-  rename('c_pct' = 4, 
-         'n_pct' = 5, 
-         'n_' = 6, 
-         'pH_KCl' = 7, 
-         'mass_soilDry' = 10, 
-         'gravimetric_moisture_content' = grametric_moisture_content) |>
-  select(-bulk_density_g_cm3, -grametric_moisture_content_percent, -n_)
-
-soil_properties <- 
-  soil_properties |>
+soil_properties <-
+  data6 |>
+  select(
+    landuse, year, plot,
+    c_pct:mass_soilDry
+  ) |>
   mutate(
-    bulk_density = mass_soilDry / (3.14*(5/2)^2), # g/cm^3
+    bulk_density = mass_soilDry / (3.14 * (5 / 2)^2), # g/cm^3
     n = n_pct * 1000 / 100, #mg/kg
     c = c_pct * 1000 / 100 #mg/kg
-    )
+  )
 ```
 
 -   ***c_pct:*** \[GIVEN\] Percentage of soil mass that is carbon (grams carbon/grams soil). Value between 0 and 100
@@ -113,7 +135,7 @@ soil_properties <-
 
 -   ***mass_soilWet:*** the wet mass of a 5cm deep and 5cm diameter soil core
 
--   ***bulk_density*** the average density of the soil core
+-   ***bulk_density*** the density of the dry soil core
 
 #### WORMS
 
@@ -122,17 +144,15 @@ convert to individuals per m2
 ```{r worms}
 
 worms <- 
-  data_raw |>
-  select(1:3, earthworm_number_individuals_0_12_m2:earthworm_density_g_m2)
-
-
-worms <- 
-  worms |>
+  data6 |>
+  select(landuse, year, plot, 
+         'count' = earthworm_count,
+         'mass' = earthworm_mass) |>
   mutate(
-    worms_per_m2 = earthworm_number_individuals_0_12_m2 / 0.12, 
-    wormMass_per_m2 = earthworm_fresh_weight_g_0_12m2 / 0.12 #g/m^2
+    density = count / 0.12, # individuals/m2
+    mass_density = mass / 0.12 #g/m^2
          ) |>
-  select(plot, landuse, year, worms_per_m2, wormMass_per_m2)
+  select(plot, landuse, year, density, mass_density)
 ```
 
 -   ***bulk_density*** the average density of the soil core
@@ -142,33 +162,34 @@ worms <-
 convert data to percent (already in percent?)
 
 ```{r}
-decomp <- data_raw |>
-  select(1:3, material_loss_after_34_days_percent_16:decompostion_constant_k_d_1) |>
-  mutate(material_loss = material_loss_after_34_days_percent_16) |>
-  select(plot, landuse, year, material_loss, 'decomp_constant' = decompostion_constant_k_d_1)
-  
+decomp <- data6 |>
+  select(landuse, year, plot, pct_loss, decomp_constant)
 ```
 
 #### ENZYMES
 
 convert data to µg PNP/g dry soil per hour
 
-gmc = (wet-dry) / dry dry = wet / (gmc +1)
+gmc = (wet-dry) / dry 
+
+dry = wet / (gmc +1)
+
+pnp_wet = micrograms pnp / 1g wet soil
+
+pnp_dry = micrograms pnp / 1g dry soil
 
 we assume there is no interaction between soil moisture and pnp production
 
 ```{r}
-enzymes <- data_raw |>
-  select(1:3, 27:28)
-
-enzymes <-
-  enzymes |>
+enzymes <- 
+  data6 |>
+  select(landuse, year, plot, pnp_wet) |>
   left_join(soil_properties |>
-              select(1:3, 'gmc' = gravimetric_moisture_content)) |>
-  rename('pnp_wet' = 4, 
-         'pnp_dry' = 5) |>
-  mutate(dry = 1 / (gmc + 1), 
-         pnp_dry = pnp_wet / dry)
+              select(landuse, year, plot, gmc)) |>
+  mutate(
+    dry = 1 / (gmc + 1), 
+    pnp_dry = pnp_wet / dry
+    )
   
 ```
 
@@ -177,29 +198,22 @@ enzymes <-
 -   ***dry:*** amount of dry soil in one gram of fresh soil
 
 -   ***pnp_dry:*** amount of pnp produced in micrograms per gram of dry soil
+
 #### ARTHROPODS
 
 convert to individuals per square meter
 
 ```{r}
 
-arthropods <- data_raw |>
-  select(1:3, total_microarthropods_individuals_per_soil_core:other_microarthropods_ind_m2)
-
-names(arthropods) <- gsub("s_individuals_per_soil_core", 
-                         "_count", 
-                         colnames(arthropods))
 arthropods <- 
-  arthropods |> 
-  rename('microarthopod_count' = total_microarthropod_count,
-         'other_count' = other_microarthropod_count) |>
+  data6 |>
+  select(landuse, year, plot, microarthropods:others) |>
+  pivot_longer(cols = microarthropods:others,
+               values_to = 'count',
+               names_to = 'organism') |>
   mutate(
-    microarthopod_density = microarthopod_count / (5/2)^2,
-    mite_density = mite_count / (5/2)^2,
-    springtail_density = springtail_count / (5/2)^2,
-    other_density = other_count / (5/2)^2
-  ) |>
-  select(1:3, contains('count'), contains('density'))
+    density = count / (5/2)^2
+  )
 ```
 
 #### NEMATODES
@@ -209,36 +223,27 @@ Task: convert data to ind./100 g dry soil
 gmc = (wet-dry) / dry dry = wet / (gmc +1)
 
 ```{r nematodes}
-nematodes <- data_raw |>
-  select(1:3, 29:30)
-
-# nematodes |>
-#   rename('nematode_count' = 4) |>
-#   mutate(nematode_estimate_100 = nematode_count * 2)
-
-nematodes <-
-  nematodes |>
-  rename('nematode_count' = 4) |>
+nematodes <- 
+  data6 |>
+  select(landuse, year, plot, nematodes) |>
   left_join(soil_properties |>
-              select(1:3, 'gmc' = gravimetric_moisture_content)) |>
+              select(landuse, year, plot, gmc)) |>
   mutate(
     dry = 50 / (gmc + 1),
-    nematode_density_dry = nematode_count / dry,
+    nematode_density_dry = nematodes / dry,
     nematode_estimate_100 = nematode_density_dry * 100
-  ) |>
-  select(-nematodes_100_g_dry_soil) |>
-  glimpse()
+  ) 
 ```
 
--   ***nematode_count:*** \[GIVEN\] number of nematodes observed in 50g of fresh soil. *strangely, it contains partial numbers.*
+-   ***nematodes:*** \[GIVEN\] estimated number of nematodes in 50g of fresh soil
 
 -   ***gmc:*** \[GIVEN\] gravimetric_moisture_content
 
--   ***dry:*** amount of dry soil in the fresh soil sample
+-   ***dry:*** amount of dry soil in the 50g fresh soil sample
 
 -   ***nematode_density_dry:*** number of nematodes expected to be found in 1g of dry soil.
 
--   ***nematode_estimate_100:*** number of nematodes expected to be found in 100g of soil
+-   ***nematode_estimate_100:*** number of nematodes estimated to be found in 100g of soil
 
 #### MCIROBIAL BIOMASS CARBON
 
@@ -247,28 +252,19 @@ calculate mbc according to the protocol
 special note: fumigated should be higher than non-fumigated. If it is not, swap the values.
 
 ```{r}
-mbc <- data_raw |>
-  select(1:3, 31:32, 34:37)
-
-mbc <-
-mbc |>
-  left_join(soil_properties |> select(1:3, gravimetric_moisture_content)) |> 
-  rename(
-    'soil_wet_weight' = mass_fresh_soil_g,
-    'c_fumigated' = fumigated_c_mg_l,
-    'c_nonfumigated' = non_fumigated_c_mg_l) |>
+mbc <- 
+  data6 |>
+  select(landuse, year, plot, c_fumigated, c_nonfumigated)|>
+  left_join(soil_properties |> 
+              select(landuse, year, plot, gmc)) |>
   mutate(
-    extractant_volume = 60, #mL
-    
-    ws = gravimetric_moisture_content, #g water / g dry soil
-    
+    soil_wet_weight = 50, #g, given in metadata
+    extractant_volume = 60, #mL, given in protocol
+    ws = gmc, #g water / g dry soil
     ms = soil_wet_weight / (1+ws),
-    
     vs = (soil_wet_weight - ms) + extractant_volume,
-    
     cf = c_fumigated * vs / ms,
     cnf = c_nonfumigated * vs / ms,
-    
     mbc = (cf-cnf) / .045 # 0.45 is k_ec value
   )
 ```
@@ -278,34 +274,38 @@ mbc |>
 ```{r ph_decomposition}
 left_join(decomp, soil_properties) |>
   ggplot() +
-  geom_point(aes(x = pH_KCl, y = material_loss, color = landuse))
+  geom_point(aes(x = ph, y = pct_loss, color = landuse))
 ```
 
 ```{r ph_landuse}
 soil_properties |>
   ggplot() +
-  geom_boxplot(aes(x = landuse, y = pH_KCl, fill = landuse))
+  geom_boxplot(aes(x = landuse, y = ph, fill = landuse))
 ```
 
+ph-population is messed up but i will fix
 ```{r ph_population}
-left_join(nematodes, arthropods) |> 
+nematodes |>
+  select(landuse, year, plot, 'density' = nematode_density_dry) |>
+  mutate(organism = 'nematode') |>
+  rbind(arthropods |> 
+          select(-count)) |>
   left_join(soil_properties) |>
-  pivot_longer(cols = contains('density'),
-               names_to = 'organism',
-               values_to = 'density') |>
+
   ggplot() +
-  geom_point(aes(x = pH_KCl, y = density, color = landuse)) +
+  geom_point(aes(x = ph, y = density, color = landuse)) +
   
   facet_wrap(~organism, scales = 'free')
 ```
 
 ```{r landuse_populations}
-left_join(nematodes, arthropods) |> 
+nematodes |>
+  select(landuse, year, plot, 'density' = nematode_density_dry) |>
+  mutate(organism = 'nematode') |>
+  rbind(arthropods |> 
+          select(-count)) |>
   left_join(soil_properties) |>
-  pivot_longer(cols = contains('density'),
-               names_to = 'organism',
-               values_to = 'density') |>
-  # glimpse()
+
   ggplot() +
   geom_boxplot(aes(x = organism, y = density)) +
   theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
