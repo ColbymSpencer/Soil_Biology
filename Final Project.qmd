@@ -54,7 +54,14 @@ group |>
 
 ```
 
-```{r split_raw_data}
+#### SOIL PROPERTIES
+convert carbon and nitrogen to mg/kg
+
+convert GMC to percent (already in percent?)
+
+convert bulk density to g/cm3
+
+```{r soil_properties}
 soil_properties <- 
   data_raw |>
   select(1:3, total_c_percent:bulk_density_g_cm3) |>
@@ -64,40 +71,8 @@ soil_properties <-
          'pH_KCl' = 7, 
          'mass_soilDry' = 10, 
          'gravimetric_moisture_content' = grametric_moisture_content) |>
-  select(-bulk_density_g_cm3, -grametric_moisture_content_percent)
+  select(-bulk_density_g_cm3, -grametric_moisture_content_percent, -n_)
 
-
-worms <- 
-  data_raw |>
-  select(1:3, earthworm_number_individuals_0_12_m2:earthworm_density_g_m2)
-
-
-decomp <- data_raw |>
-  select(1:3, material_loss_after_34_days_percent_16:decompostion_constant_k_d_1) |>
-  mutate(material_loss = material_loss_after_34_days_percent_16) |>
-  select(plot, landuse, year, material_loss, 'decomp_constant' = decompostion_constant_k_d_1)
-
-arthopods <- data_raw |>
-  select(1:3, total_microarthropods_individuals_per_soil_core:other_microarthropods_ind_m2)
-
-enzymes <- data_raw |>
-  select(1:3, 27:28)
-
-nematodes <- data_raw |>
-  select(1:3, 29:30)
-
-mbc <- data_raw |>
-  select(1:3, 31:32, 34:37)
-```
-
-#### SOIL PROPERTIES
-convert carbon and nitrogen to mg/kg
-
-convert GMC to percent (already in percent?)
-
-convert bulk density to g/cm3
-
-```{r soil_properties}
 soil_properties <- 
   soil_properties |>
   mutate(
@@ -129,6 +104,12 @@ soil_properties <-
 convert to individuals per m2
 
 ```{r worms}
+
+worms <- 
+  data_raw |>
+  select(1:3, earthworm_number_individuals_0_12_m2:earthworm_density_g_m2)
+
+
 worms <- 
   worms |>
   mutate(
@@ -142,14 +123,27 @@ worms <-
 
 
 #### DECOMPOSITION
-
-#### ARTHOPODS
-
+convert data to percent (already in percent?)
 ```{r}
-names(arthopods) <- gsub("s_individuals_per_soil_core", 
+decomp <- data_raw |>
+  select(1:3, material_loss_after_34_days_percent_16:decompostion_constant_k_d_1) |>
+  mutate(material_loss = material_loss_after_34_days_percent_16) |>
+  select(plot, landuse, year, material_loss, 'decomp_constant' = decompostion_constant_k_d_1)
+  
+```
+
+#### ARTHROPODS
+convert to individuals per square meter
+```{r}
+
+arthropods <- data_raw |>
+  select(1:3, total_microarthropods_individuals_per_soil_core:other_microarthropods_ind_m2)
+
+names(arthropods) <- gsub("s_individuals_per_soil_core", 
                          "_count", 
-                         colnames(arthopods))
-arthopods |> 
+                         colnames(arthropods))
+arthropods <- 
+  arthropods |> 
   rename('microarthopod_count' = total_microarthropod_count,
          'other_count' = other_microarthropod_count) |>
   mutate(
@@ -165,16 +159,29 @@ arthopods |>
 
 convert data to µg PNP/g dry soil per hour
 
-```{r}
-enzymes <- 
-enzymes |>
-  rename('pnp_wet' = 4, 'pnp_dry' = 5) |>
-  # mutate(
-  #   pnp_dry = 
-  # )
-  
+gmc = (wet-dry) / dry
+dry = wet / (gmc +1)
 
+we assume there is no interaction between soil moisture and pnp production
+```{r}
+enzymes <- data_raw |>
+  select(1:3, 27:28)
+
+enzymes <-
+  enzymes |>
+  left_join(soil_properties |>
+              select(1:3, 'gmc' = gravimetric_moisture_content)) |>
+  rename('pnp_wet' = 4, 
+         'pnp_dry' = 5) |>
+  mutate(dry = 1 / (gmc + 1), 
+         pnp_dry = pnp_wet / dry)
+  
 ```
+-   ***pnp_wet:*** \[GIVEN\] amount of pnp produced in micrograms per gram of fresh soil
+
+-   ***dry:*** amount of dry soil in one gram of fresh soil
+
+-   ***pnp_dry:*** amount of pnp produced in micrograms per gram of dry soil
 
 #### NEMATODES
 
@@ -183,7 +190,10 @@ Task: convert data to ind./100 g dry soil
 gmc = (wet-dry) / dry
 dry = wet / (gmc +1)
 
-```{r}
+```{r nematodes}
+nematodes <- data_raw |>
+  select(1:3, 29:30)
+
 # nematodes |>
 #   rename('nematode_count' = 4) |>
 #   mutate(nematode_estimate_100 = nematode_count * 2)
@@ -214,7 +224,14 @@ nematodes <-
 
 #### MCIROBIAL BIOMASS CARBON
 
+calculate mbc according to the protocol
+
+special note: fumigated should be higher than non-fumigated. If it is not, swap the values.
+
 ```{r}
+mbc <- data_raw |>
+  select(1:3, 31:32, 34:37)
+
 mbc <-
 mbc |>
   left_join(soil_properties |> select(1:3, gravimetric_moisture_content)) |> 
@@ -225,7 +242,7 @@ mbc |>
   mutate(
     extractant_volume = 60, #mL
     
-    ws = gravimetric_moisture_content, 
+    ws = gravimetric_moisture_content, #g water / g dry soil
     
     ms = soil_wet_weight / (1+ws),
     
@@ -234,15 +251,10 @@ mbc |>
     cf = c_fumigated * vs / ms,
     cnf = c_nonfumigated * vs / ms,
     
-    mbc = (cf-cnf) / .045
+    mbc = (cf-cnf) / .045 # 0.45 is k_ec value
   )
 ```
 
-#### DECOMPOSITION
-
-```{r}
-
-```
 
 #### EXPLORATORY DATA ANALYSIS
 
@@ -251,3 +263,41 @@ left_join(decomp, soil_properties) |>
   ggplot() +
   geom_point(aes(x = pH_KCl, y = material_loss, color = landuse))
 ```
+
+```{r ph_landuse}
+soil_properties |>
+  ggplot() +
+  geom_boxplot(aes(x = landuse, y = pH_KCl, fill = landuse))
+```
+
+```{r ph_population}
+
+```
+
+```{r landuse_populations}
+left_join(nematodes, arthropods) |> 
+  left_join(soil_properties) |>
+  pivot_longer(cols = contains('density'),
+               names_to = 'organism',
+               values_to = 'density') |>
+  ggplot() +
+  geom_boxplot(aes(x = organism, y = density)) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  facet_wrap(~landuse)
+  glimpse()
+```
+
+```{r bulkDensity_landuse}
+soil_properties |>
+  ggplot() +
+  geom_boxplot(aes(x = landuse, y = bulk_density, fill = landuse))
+```
+
+```{r enzymeActivity_soilCarbon}
+left_join(soil_properties, enzymes) |>
+    # glimpse()
+  ggplot() +
+  geom_point(aes(x = c, y = pnp_dry, color = landuse))
+
+```
+
