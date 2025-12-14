@@ -1,0 +1,253 @@
+---
+title: "Final Project"
+format: html
+editor: visual
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r libraries}
+library(tidyverse)
+library(readxl)
+
+```
+
+```{r import data}
+group_raw <- read_excel("data for each group_2025.xlsx", 
+                        sheet = 'group')
+
+data_raw <- read_excel("data for each group_2025.xlsx",
+                       sheet = 'Raw Data Reformatted',
+                       skip = 1) |>
+            rename("plot" = 1, "landuse" = 2, "year" = 3) |>
+  mutate(year = as_factor(year)) |>
+  janitor::clean_names()
+```
+
+```{r clean_groups}
+#### TIDY GROUP DATA ####
+group <- group_raw |>
+  ## clean multiple values per cell
+  separate_longer_delim(cols = Cropland_2025,
+                        delim = ' ') |>
+  separate_longer_delim(cols = Grassland_2025,
+                        delim = ' ') |>
+  separate_longer_delim(cols = Forest_2025,
+                        delim = ' ') |>
+  separate_longer_delim(cols = Grassland_2024,
+                        delim = ' ') |>
+  separate_longer_delim(cols = Forest_2024,
+                        delim = ' ') |>
+  pivot_longer(cols = (contains('_')),
+               names_to = 'landuse_year',
+               values_to = 'plot') |>
+  separate(landuse_year, c('landuse', 'year'), '_') |>
+  filter(!is.na(plot), plot != 'plot', plot != '') |>
+  distinct() |>
+  # mutate(year = as_factor(year)) |>
+  janitor::clean_names()
+
+rm(group_raw)
+
+group |>
+  filter(group_number == 6)
+
+```
+
+```{r split_raw_data}
+soil_properties <- 
+  data_raw |>
+  select(1:3, total_c_percent:bulk_density_g_cm3) |>
+  rename('c_pct' = 4, 
+         'n_pct' = 5, 
+         'n_' = 6, 
+         'pH_KCl' = 7, 
+         'mass_soilDry' = 10, 
+         'gravimetric_moisture_content' = grametric_moisture_content) |>
+  select(-bulk_density_g_cm3, -grametric_moisture_content_percent)
+
+
+worms <- 
+  data_raw |>
+  select(1:3, earthworm_number_individuals_0_12_m2:earthworm_density_g_m2)
+
+
+decomp <- data_raw |>
+  select(1:3, material_loss_after_34_days_percent_16:decompostion_constant_k_d_1) |>
+  mutate(material_loss = material_loss_after_34_days_percent_16) |>
+  select(plot, landuse, year, material_loss, 'decomp_constant' = decompostion_constant_k_d_1)
+
+arthopods <- data_raw |>
+  select(1:3, total_microarthropods_individuals_per_soil_core:other_microarthropods_ind_m2)
+
+enzymes <- data_raw |>
+  select(1:3, 27:28)
+
+nematodes <- data_raw |>
+  select(1:3, 29:30)
+
+mbc <- data_raw |>
+  select(1:3, 31:32, 34:37)
+```
+
+#### SOIL PROPERTIES
+convert carbon and nitrogen to mg/kg
+
+convert GMC to percent (already in percent?)
+
+convert bulk density to g/cm3
+
+```{r soil_properties}
+soil_properties <- 
+  soil_properties |>
+  mutate(
+    bulk_density = mass_soilDry / (3.14*(5/2)^2), # g/cm^3
+    n = n_pct * 1000 / 100, #mg/kg
+    c = c_pct * 1000 / 100 #mg/kg
+    )
+```
+
+-   ***c_pct:*** \[GIVEN\] Percentage of soil mass that is carbon (grams carbon/grams soil). Value between 0 and 100
+
+-   ***n_pct:*** \[GIVEN\] Percentage of soil mass that is nitrogen (grams nitrogen/grams soil). Value between 0 and 100
+
+-   ***c:*** mass ratio between nitrogen and the total soil sample (mg/kg)
+
+-   ***n:*** mass ratio between carbon and the total soil sample (mg/kg)
+
+-   ***pH_KCl:*** \[GIVEN\] pH-KCl
+
+-   ***gravimetric_moisture_content:*** \[GIVEN\] the mass of water in the soil divided by the mass of the dry material, typically expressed as a percentage or decimal (e.g., g water/g dry soil). It's measured by weighing a wet sample, oven-drying it until all water evaporates, and then re-weighing the dry sample; the difference reveals the water mass.
+
+-   ***mass_soilDry:*** \[GIVEN\] the dry mass of a 5cm deep and 5cm diameter soil core
+
+-   ***mass_soilWet:*** the wet mass of a 5cm deep and 5cm diameter soil core
+
+-   ***bulk_density*** the average density of the soil core
+
+#### WORMS
+convert to individuals per m2
+
+```{r worms}
+worms <- 
+  worms |>
+  mutate(
+    worms_per_m2 = earthworm_number_individuals_0_12_m2 / 0.12, 
+    wormMass_per_m2 = earthworm_fresh_weight_g_0_12m2 / 0.12 #g/m^2
+         ) |>
+  select(plot, landuse, year, worms_per_m2, wormMass_per_m2)
+```
+
+-   ***bulk_density*** the average density of the soil core
+
+
+#### DECOMPOSITION
+
+#### ARTHOPODS
+
+```{r}
+names(arthopods) <- gsub("s_individuals_per_soil_core", 
+                         "_count", 
+                         colnames(arthopods))
+arthopods |> 
+  rename('microarthopod_count' = total_microarthropod_count,
+         'other_count' = other_microarthropod_count) |>
+  mutate(
+    microarthopod_density = microarthopod_count / (5/2)^2,
+    mite_density = mite_count / (5/2)^2,
+    springtail_density = springtail_count / (5/2)^2,
+    other_density = other_count / (5/2)^2
+  ) |>
+  select(1:3, contains('count'), contains('density'))
+```
+
+#### ENZYMES
+
+convert data to µg PNP/g dry soil per hour
+
+```{r}
+enzymes <- 
+enzymes |>
+  rename('pnp_wet' = 4, 'pnp_dry' = 5) |>
+  # mutate(
+  #   pnp_dry = 
+  # )
+  
+
+```
+
+#### NEMATODES
+
+Task: convert data to ind./100 g dry soil
+
+gmc = (wet-dry) / dry
+dry = wet / (gmc +1)
+
+```{r}
+# nematodes |>
+#   rename('nematode_count' = 4) |>
+#   mutate(nematode_estimate_100 = nematode_count * 2)
+
+nematodes <-
+  nematodes |>
+  rename('nematode_count' = 4) |>
+  left_join(soil_properties |>
+              select(1:3, 'gmc' = gravimetric_moisture_content)) |>
+  mutate(
+    dry = 50 / (gmc + 1),
+    nematode_density_dry = nematode_count / dry,
+    nematode_estimate_100 = nematode_density_dry * 100
+  ) |>
+  select(-nematodes_100_g_dry_soil) |>
+  glimpse()
+```
+
+-   ***nematode_count:*** \[GIVEN\] number of nematodes observed in 50g of fresh soil. *strangely, it contains partial numbers.*
+
+-   ***gmc:*** \[GIVEN\] gravimetric_moisture_content
+
+-   ***dry:***  amount of dry soil in the fresh soil sample
+
+-   ***nematode_density_dry:*** number of nematodes expected to be found in 1g of dry soil.
+
+-   ***nematode_estimate_100:*** number of nematodes expected to be found in 100g of soil
+
+#### MCIROBIAL BIOMASS CARBON
+
+```{r}
+mbc <-
+mbc |>
+  left_join(soil_properties |> select(1:3, gravimetric_moisture_content)) |> 
+  rename(
+    'soil_wet_weight' = mass_fresh_soil_g,
+    'c_fumigated' = fumigated_c_mg_l,
+    'c_nonfumigated' = non_fumigated_c_mg_l) |>
+  mutate(
+    extractant_volume = 60, #mL
+    
+    ws = gravimetric_moisture_content, 
+    
+    ms = soil_wet_weight / (1+ws),
+    
+    vs = (soil_wet_weight - ms) + extractant_volume,
+    
+    cf = c_fumigated * vs / ms,
+    cnf = c_nonfumigated * vs / ms,
+    
+    mbc = (cf-cnf) / .045
+  )
+```
+
+#### DECOMPOSITION
+
+```{r}
+
+```
+
+#### EXPLORATORY DATA ANALYSIS
+
+```{r ph_decomposition}
+left_join(decomp, soil_properties) |>
+  ggplot() +
+  geom_point(aes(x = pH_KCl, y = material_loss, color = landuse))
+```
