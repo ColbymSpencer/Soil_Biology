@@ -49,12 +49,14 @@ group <- group_raw |>
 
 rm(group_raw)
 
-group |>
+our_group <- 
+  group |>
   filter(group_number == 6)
 
 ```
 
 #### SOIL PROPERTIES
+
 convert carbon and nitrogen to mg/kg
 
 convert GMC to percent (already in percent?)
@@ -101,6 +103,7 @@ soil_properties <-
 -   ***bulk_density*** the average density of the soil core
 
 #### WORMS
+
 convert to individuals per m2
 
 ```{r worms}
@@ -121,9 +124,10 @@ worms <-
 
 -   ***bulk_density*** the average density of the soil core
 
-
 #### DECOMPOSITION
+
 convert data to percent (already in percent?)
+
 ```{r}
 decomp <- data_raw |>
   select(1:3, material_loss_after_34_days_percent_16:decompostion_constant_k_d_1) |>
@@ -133,7 +137,9 @@ decomp <- data_raw |>
 ```
 
 #### ARTHROPODS
+
 convert to individuals per square meter
+
 ```{r}
 
 arthropods <- data_raw |>
@@ -159,10 +165,10 @@ arthropods <-
 
 convert data to µg PNP/g dry soil per hour
 
-gmc = (wet-dry) / dry
-dry = wet / (gmc +1)
+gmc = (wet-dry) / dry dry = wet / (gmc +1)
 
 we assume there is no interaction between soil moisture and pnp production
+
 ```{r}
 enzymes <- data_raw |>
   select(1:3, 27:28)
@@ -177,6 +183,7 @@ enzymes <-
          pnp_dry = pnp_wet / dry)
   
 ```
+
 -   ***pnp_wet:*** \[GIVEN\] amount of pnp produced in micrograms per gram of fresh soil
 
 -   ***dry:*** amount of dry soil in one gram of fresh soil
@@ -187,8 +194,7 @@ enzymes <-
 
 Task: convert data to ind./100 g dry soil
 
-gmc = (wet-dry) / dry
-dry = wet / (gmc +1)
+gmc = (wet-dry) / dry dry = wet / (gmc +1)
 
 ```{r nematodes}
 nematodes <- data_raw |>
@@ -216,7 +222,7 @@ nematodes <-
 
 -   ***gmc:*** \[GIVEN\] gravimetric_moisture_content
 
--   ***dry:***  amount of dry soil in the fresh soil sample
+-   ***dry:*** amount of dry soil in the fresh soil sample
 
 -   ***nematode_density_dry:*** number of nematodes expected to be found in 1g of dry soil.
 
@@ -255,7 +261,6 @@ mbc |>
   )
 ```
 
-
 #### EXPLORATORY DATA ANALYSIS
 
 ```{r ph_decomposition}
@@ -271,7 +276,15 @@ soil_properties |>
 ```
 
 ```{r ph_population}
-
+left_join(nematodes, arthropods) |> 
+  left_join(soil_properties) |>
+  pivot_longer(cols = contains('density'),
+               names_to = 'organism',
+               values_to = 'density') |>
+  ggplot() +
+  geom_point(aes(x = pH_KCl, y = density, color = landuse)) +
+  
+  facet_wrap(~organism, scales = 'free')
 ```
 
 ```{r landuse_populations}
@@ -280,11 +293,12 @@ left_join(nematodes, arthropods) |>
   pivot_longer(cols = contains('density'),
                names_to = 'organism',
                values_to = 'density') |>
+  # glimpse()
   ggplot() +
   geom_boxplot(aes(x = organism, y = density)) +
   theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
   facet_wrap(~landuse)
-  glimpse()
+
 ```
 
 ```{r bulkDensity_landuse}
@@ -298,6 +312,17 @@ left_join(soil_properties, enzymes) |>
     # glimpse()
   ggplot() +
   geom_point(aes(x = c, y = pnp_dry, color = landuse))
+
+```
+
+```{r bulkDensity_microbialActivity}
+left_join(mbc, soil_properties) |>
+  ggplot() +
+  geom_point(aes(x = bulk_density, y = mbc, color = landuse)) 
+```
+
+#### STATISTICAL SIGNIFICANCE
+```{r}
 
 ```
 
