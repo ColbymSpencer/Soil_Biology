@@ -5,7 +5,7 @@ editor: visual
 editor_options: 
   chunk_output_type: console
 ---
-
+Alt + O to close all open chunks (makes it more readable)
 #### SETUP
 ```{r libraries}
 library(tidyverse)
@@ -15,19 +15,21 @@ library(readxl)
 
 ```{r import data}
 group_raw <- read_excel("data for each group_2025.xlsx", 
-                        sheet = 'group')
+                        sheet = 'group',
+                        col_types = 'text') 
 
 data_raw <- read_excel("data for each group_2025.xlsx",
                        sheet = 'Raw Data Reformatted',
                        skip = 1) |>
-            rename("plot" = 1, "landuse" = 2, "year" = 3) |>
-  mutate(year = as_factor(year),
-         plot = as_factor(plot)) |>
-  janitor::clean_names()
+            mutate(year = as_factor(year),
+                   group = as_factor(group),
+                   plot = as_factor(plot)) |>
+            janitor::clean_names()
 ```
 
 ```{r clean_groups}
-group <- group_raw |>
+group <- 
+  group_raw |>
   ## clean multiple values per cell
   separate_longer_delim(cols = Cropland_2025,
                         delim = ' ') |>
@@ -45,19 +47,25 @@ group <- group_raw |>
   separate(landuse_year, c('landuse', 'year'), '_') |>
   filter(!is.na(plot), plot != 'plot', plot != '') |>
   distinct() |>
-  # mutate(year = as_factor(year)) |>
-  janitor::clean_names()
+  janitor::clean_names() |>
+  mutate(year = as_factor(year),
+         group = as_factor(group),
+         plot = as.factor(plot),
+         landuse = tolower(landuse))
+
 
 rm(group_raw)
 
-our_group <- 
+group6 <- 
   group |>
   filter(group_number == 6)
 
 ```
 
 ```{r}
-data_raw <- left_join(our_group, data_raw)
+data_raw <-
+  left_join(group6, data_raw) |>
+  glimpse()
 ```
 
 #### SOIL PROPERTIES
@@ -141,31 +149,6 @@ decomp <- data_raw |>
   
 ```
 
-#### ARTHROPODS
-
-convert to individuals per square meter
-
-```{r}
-
-arthropods <- data_raw |>
-  select(1:3, total_microarthropods_individuals_per_soil_core:other_microarthropods_ind_m2)
-
-names(arthropods) <- gsub("s_individuals_per_soil_core", 
-                         "_count", 
-                         colnames(arthropods))
-arthropods <- 
-  arthropods |> 
-  rename('microarthopod_count' = total_microarthropod_count,
-         'other_count' = other_microarthropod_count) |>
-  mutate(
-    microarthopod_density = microarthopod_count / (5/2)^2,
-    mite_density = mite_count / (5/2)^2,
-    springtail_density = springtail_count / (5/2)^2,
-    other_density = other_count / (5/2)^2
-  ) |>
-  select(1:3, contains('count'), contains('density'))
-```
-
 #### ENZYMES
 
 convert data to µg PNP/g dry soil per hour
@@ -194,6 +177,30 @@ enzymes <-
 -   ***dry:*** amount of dry soil in one gram of fresh soil
 
 -   ***pnp_dry:*** amount of pnp produced in micrograms per gram of dry soil
+#### ARTHROPODS
+
+convert to individuals per square meter
+
+```{r}
+
+arthropods <- data_raw |>
+  select(1:3, total_microarthropods_individuals_per_soil_core:other_microarthropods_ind_m2)
+
+names(arthropods) <- gsub("s_individuals_per_soil_core", 
+                         "_count", 
+                         colnames(arthropods))
+arthropods <- 
+  arthropods |> 
+  rename('microarthopod_count' = total_microarthropod_count,
+         'other_count' = other_microarthropod_count) |>
+  mutate(
+    microarthopod_density = microarthopod_count / (5/2)^2,
+    mite_density = mite_count / (5/2)^2,
+    springtail_density = springtail_count / (5/2)^2,
+    other_density = other_count / (5/2)^2
+  ) |>
+  select(1:3, contains('count'), contains('density'))
+```
 
 #### NEMATODES
 
