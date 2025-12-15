@@ -88,8 +88,8 @@ data <-
 filter the data for only our groups data
 ```{r filter_raw}
 group6 <- 
-  group |>
-  filter(group_number == 6)
+  group #|>
+  # filter(group_number == 6)
 
 data6 <- left_join(group6, data) |>
   select(-group, -group_number)
@@ -118,8 +118,8 @@ soil_properties <-
   ) |>
   mutate(
     bulk_density = mass_soilDry / (3.14 * (5 / 2)^2), # g/cm^3
-    n = n_pct * 1000 / 100, #mg/kg
-    c = c_pct * 1000 / 100 #mg/kg
+    n = n_pct * 10000, #mg/kg
+    c = c_pct * 10000 #mg/kg
   )
 ```
 
@@ -162,7 +162,7 @@ worms <-
 
 -   ***density*** number of earthworms observed per square meter
 
--   ***density_mass*** the average density of earthworm mass per square meter
+-   ***mass_density*** the average density of earthworm mass per square meter
 
 #### ARTHROPODS
 
@@ -181,6 +181,9 @@ arthropods <-
   )
 ```
 
+-   ***organism*** microarthropod being viewed: all microarthropods, mites, springtails, or others
+
+-   ***density*** number of organisms per square meter. We assume there are no microbes under the soil sample. 
 
 #### NEMATODES
 
@@ -266,7 +269,7 @@ mbc <-
   left_join(soil_properties |> 
               select(landuse, year, plot, gmc)) |>
   mutate(
-    soil_wet_weight = 50, #g, given in metadata
+    soil_wet_weight = 30, #g, given in protocol
     extractant_volume = 60, #mL, given in protocol
     ws = gmc, #g water / g dry soil
     ms = soil_wet_weight / (1+ws),
@@ -279,16 +282,49 @@ mbc <-
 
 #### EXPLORATORY DATA ANALYSIS
 
+No notable relationships
 ```{r ph_decomposition}
+# underpants decomposition does not appear related with PH
 left_join(decomp, soil_properties) |>
   ggplot() +
-  geom_point(aes(x = ph, y = pct_loss, color = landuse))
+  geom_point(aes(x = ph, y = pct_loss, color = landuse)) +
+  labs(y = 'Percent Decomposition',
+       x = 'pH-KCl',
+       title = 'Underpant Decomposition and pH')
+
+# underpants decomposition does not appear linearly related to PNP production
+left_join(decomp, enzymes) |>
+  ggplot() +
+  geom_point(aes(x = pnp_dry, y = pct_loss, color = landuse)) +
+  labs(y = 'Percent Decomposition',
+       x = 'PNP Production (ug/g)',
+       title = 'Underpant Decomposition and PNP')
+
+
+
 ```
+
+ph and enzymes
+```{r ph_enzymes}
+left_join(soil_properties, enzymes) |>
+  ggplot() +
+  geom_point(aes(x = ph, y = pnp_dry, color = landuse)) +
+  labs(y = 'PNP Production (ug/g)',
+       x = 'pH-KCl',
+       title = 'PNP Production and pH')
+```
+
 
 ```{r ph_landuse}
 soil_properties |>
   ggplot() +
-  geom_boxplot(aes(x = landuse, y = ph, fill = landuse))
+  geom_boxplot(aes(y = ph, fill = landuse))+
+  facet_wrap(~landuse, scales  = 'free_y') +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs( title = 'Differences in pH Across Landuses',
+        y = 'pH-KCl',
+        x = 'Landuse')
+
 ```
 
 ph-population is messed up but i will fix
@@ -334,9 +370,6 @@ left_join(soil_properties, enzymes) |>
   geom_point(aes(x = c, y = pnp_dry, color = landuse)) +
   labs(title = 'PNP Production and Soil Carbon',
        y = 'PNP / Dry Soil (µg/g)', 
-       x = 'Carbon (mg/kg)') + 
-    labs(title = 'PNP Production and Soil Carbon',
-       y = 'PNP / Dry Soil (µg/g)', 
        x = 'Carbon (mg/kg)')
 
 ```
@@ -347,6 +380,7 @@ left_join(mbc, soil_properties) |>
   geom_point(aes(x = bulk_density, y = mbc, color = landuse)) 
 ```
 
+no clear relationship
 ```{r gmc_wormDensity}
 # worms per square meter and soil moisture
 left_join(soil_properties, worms) |>
@@ -359,9 +393,110 @@ left_join(soil_properties, worms) |>
   geom_point(aes(x = gmc, y = mass_density, color = landuse))
 ```
 
+```{r coorelationMatrix}
+correlation_matrix <- arthropods |>
+  select(-count) |>
+  pivot_wider( 
+               names_from = organism,
+               values_from = density) |>
+  select(microarthropods:others) |> 
+  cor() 
+
+library(ggcorrplot)
+ggcorrplot(correlation_matrix, 
+           method ="square",
+           type = 'lower',
+           lab = TRUE)
+```
+
+ORGANISMS AND SOIL PROPERTIES
+```{r nematode}
+nematodes |>
+  left_join(soil_properties, join_by(landuse, year, plot, gmc)) |>
+  select('density' = nematode_density_dry, c, n, ph, gmc, bulk_density) |>
+  pivot_longer(c:bulk_density,
+               names_to = 'attribute',
+               values_to = 'value')  |>
+  ggplot() +
+  geom_point(aes(y = density, x = value)) +
+  # geom_smooth(aes(y = density, x = value)) +
+  facet_wrap(~attribute, scales = 'free')
+```
+```{r worms_soilProperties}
+worms |>
+  left_join(soil_properties) |>
+  select(density, c, n, ph, gmc, bulk_density) |>
+  pivot_longer(c:bulk_density,
+               names_to = 'attribute',
+               values_to = 'value')  |>
+  ggplot() +
+  geom_point(aes(y = density, x = value)) +
+  geom_smooth(aes(y = density, x = value)) +
+  facet_wrap(~attribute, scales = 'free')
+```
+```{r mar_soilProperties}
+arthropods |>
+  left_join(soil_properties) |>
+  select(organism, density, c, n, ph, gmc, bulk_density) |>
+  pivot_longer(c:bulk_density,
+               names_to = 'attribute',
+               values_to = 'value')  |>
+  ggplot() +
+  geom_point(aes(y = density, x = value)) +
+  geom_smooth(aes(y = density, x = value, color = organism)) +
+  facet_wrap(organism~attribute, scales = 'free')
+```
+
+
+DECOPMOSITION RATE AND SOIL PROPERTIES
+```{r}
+left_join(decomp, soil_properties) |>
+  pivot_longer(cols = c(ph, gmc, bulk_density, c, n),
+               names_to = 'attribute',
+               values_to = 'value') |>
+  filter(landuse == 'forest') |>
+  ggplot() +
+  geom_point(aes(x = value, y = pct_loss, color = attribute)) +
+  # geom_smooth(aes(x = value, y = pct_loss, color = attribute)) +
+  facet_wrap(~attribute, scales = 'free')
+```
 
 #### STATISTICAL SIGNIFICANCE
+```{r libraries}
+source('custom_functions.R')
+```
+
+
+Based on β-glucosidase activity measurements across different
+land use types, which ecosystem demonstrates the most efficient
+carbon cycling and why is this enzyme activity a reliable indicator
+for this assessment?
 ```{r}
+
+```
+
+
+How does microbial biomass in forest soils compare to
+agricultural or grassland soils, and what is the relationship with
+soil bulk density?
+```{r}
+dataset1 <- left_join(mbc, soil_properties) |>
+  select(landuse, bulk_density, mbc)
+
+ggplot(dataset1) +
+  geom_point(aes(x = bulk_density, y = mbc, color = landuse))
+
+# stats
+# one way anova for bulk density and for mbc
+anova_bd <- aov(bulk_density ~ landuse, data = dataset1)
+summary(anova_bd)
+TukeyHSD(anova_bd)
+
+# mbc is signifcantly different between all landuses
+anova_mbc <- aov(mbc ~ landuse, data = dataset1)
+summary(anova_mbc)
+TukeyHSD(anova_mbc)
+
 
 ```
 
