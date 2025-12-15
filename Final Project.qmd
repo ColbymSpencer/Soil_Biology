@@ -100,6 +100,10 @@ rm(data_raw, data, group, group_raw, group6)
 #### SOIL PROPERTIES
 
 convert carbon and nitrogen to mg/kg
+carbon and nitrogen are in % with values ranging from 0 to 100.
+
+
+
 
 convert GMC to percent (already in percent?)
 
@@ -127,9 +131,9 @@ soil_properties <-
 
 -   ***n:*** mass ratio between carbon and the total soil sample (mg/kg)
 
--   ***pH_KCl:*** \[GIVEN\] pH-KCl
+-   ***ph:*** \[GIVEN\] pH-KCl
 
--   ***gravimetric_moisture_content:*** \[GIVEN\] the mass of water in the soil divided by the mass of the dry material, typically expressed as a percentage or decimal (e.g., g water/g dry soil). It's measured by weighing a wet sample, oven-drying it until all water evaporates, and then re-weighing the dry sample; the difference reveals the water mass.
+-   ***gmc:*** \[GIVEN\] gravimetric moisture content the mass of water in the soil divided by the mass of the dry material, typically expressed as a percentage or decimal (e.g., g water/g dry soil). It's measured by weighing a wet sample, oven-drying it until all water evaporates, and then re-weighing the dry sample; the difference reveals the water mass.
 
 -   ***mass_soilDry:*** \[GIVEN\] the dry mass of a 5cm deep and 5cm diameter soil core
 
@@ -141,6 +145,7 @@ soil_properties <-
 
 convert to individuals per m2
 
+Earthworms were sampled from two 0.06m^2 soil samples and totaled per plot to find the count. 
 ```{r worms}
 
 worms <- 
@@ -155,7 +160,56 @@ worms <-
   select(plot, landuse, year, density, mass_density)
 ```
 
--   ***bulk_density*** the average density of the soil core
+-   ***density*** number of earthworms observed per square meter
+
+-   ***density_mass*** the average density of earthworm mass per square meter
+
+#### ARTHROPODS
+
+convert to individuals per square meter
+
+```{r}
+
+arthropods <- 
+  data6 |>
+  select(landuse, year, plot, microarthropods:others) |>
+  pivot_longer(cols = microarthropods:others,
+               values_to = 'count',
+               names_to = 'organism') |>
+  mutate(
+    density = count / (5/2)^2
+  )
+```
+
+
+#### NEMATODES
+
+Task: convert data to ind./100 g dry soil
+
+gmc = (wet-dry) / dry dry = wet / (gmc +1)
+
+```{r nematodes}
+nematodes <- 
+  data6 |>
+  select(landuse, year, plot, nematodes) |>
+  left_join(soil_properties |>
+              select(landuse, year, plot, gmc)) |>
+  mutate(
+    dry = 50 / (gmc + 1),
+    nematode_density_dry = nematodes / dry,
+    nematode_estimate_100 = nematode_density_dry * 100
+  ) 
+```
+
+-   ***nematodes:*** \[GIVEN\] estimated number of nematodes in 50g of fresh soil
+
+-   ***gmc:*** \[GIVEN\] gravimetric_moisture_content
+
+-   ***dry:*** amount of dry soil in the 50g fresh soil sample
+
+-   ***nematode_density_dry:*** number of nematodes expected to be found in 1g of dry soil.
+
+-   ***nematode_estimate_100:*** number of nematodes estimated to be found in 100g of soil
 
 #### DECOMPOSITION
 
@@ -198,52 +252,6 @@ enzymes <-
 -   ***dry:*** amount of dry soil in one gram of fresh soil
 
 -   ***pnp_dry:*** amount of pnp produced in micrograms per gram of dry soil
-
-#### ARTHROPODS
-
-convert to individuals per square meter
-
-```{r}
-
-arthropods <- 
-  data6 |>
-  select(landuse, year, plot, microarthropods:others) |>
-  pivot_longer(cols = microarthropods:others,
-               values_to = 'count',
-               names_to = 'organism') |>
-  mutate(
-    density = count / (5/2)^2
-  )
-```
-
-#### NEMATODES
-
-Task: convert data to ind./100 g dry soil
-
-gmc = (wet-dry) / dry dry = wet / (gmc +1)
-
-```{r nematodes}
-nematodes <- 
-  data6 |>
-  select(landuse, year, plot, nematodes) |>
-  left_join(soil_properties |>
-              select(landuse, year, plot, gmc)) |>
-  mutate(
-    dry = 50 / (gmc + 1),
-    nematode_density_dry = nematodes / dry,
-    nematode_estimate_100 = nematode_density_dry * 100
-  ) 
-```
-
--   ***nematodes:*** \[GIVEN\] estimated number of nematodes in 50g of fresh soil
-
--   ***gmc:*** \[GIVEN\] gravimetric_moisture_content
-
--   ***dry:*** amount of dry soil in the 50g fresh soil sample
-
--   ***nematode_density_dry:*** number of nematodes expected to be found in 1g of dry soil.
-
--   ***nematode_estimate_100:*** number of nematodes estimated to be found in 100g of soil
 
 #### MCIROBIAL BIOMASS CARBON
 
@@ -323,7 +331,13 @@ soil_properties |>
 left_join(soil_properties, enzymes) |>
     # glimpse()
   ggplot() +
-  geom_point(aes(x = c, y = pnp_dry, color = landuse))
+  geom_point(aes(x = c, y = pnp_dry, color = landuse)) +
+  labs(title = 'PNP Production and Soil Carbon',
+       y = 'PNP / Dry Soil (µg/g)', 
+       x = 'Carbon (mg/kg)') + 
+    labs(title = 'PNP Production and Soil Carbon',
+       y = 'PNP / Dry Soil (µg/g)', 
+       x = 'Carbon (mg/kg)')
 
 ```
 
@@ -332,6 +346,19 @@ left_join(mbc, soil_properties) |>
   ggplot() +
   geom_point(aes(x = bulk_density, y = mbc, color = landuse)) 
 ```
+
+```{r gmc_wormDensity}
+# worms per square meter and soil moisture
+left_join(soil_properties, worms) |>
+  ggplot() +
+  geom_point(aes(x = gmc, y = density, color = landuse))
+
+# worm mass per square meter and soil moisture 
+left_join(soil_properties, worms) |>
+  ggplot() +
+  geom_point(aes(x = gmc, y = mass_density, color = landuse))
+```
+
 
 #### STATISTICAL SIGNIFICANCE
 ```{r}
