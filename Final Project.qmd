@@ -60,6 +60,7 @@ data <-
   mutate(
     # convert dtypes
     year = as_factor(year),
+    landuse = as_factor(landuse),
     plot = as_factor(plot)
   ) |>
   janitor::clean_names() |>
@@ -88,8 +89,8 @@ data <-
 filter the data for only our groups data
 ```{r filter_raw}
 group6 <- 
-  group #|>
-  # filter(group_number == 6)
+  group |>
+  filter(group_number == 6)
 
 data6 <- left_join(group6, data) |>
   select(-group, -group_number)
@@ -102,8 +103,7 @@ rm(data_raw, data, group, group_raw, group6)
 convert carbon and nitrogen to mg/kg
 carbon and nitrogen are in % with values ranging from 0 to 100.
 
-
-
+$$ \frac{Carbon (g)}{Soil (g)} * \frac{1000mg}{g} * \frac{1000g}{kg} * \frac{1\%}{100\%}$$
 
 convert GMC to percent (already in percent?)
 
@@ -120,7 +120,8 @@ soil_properties <-
     bulk_density = mass_soilDry / (3.14 * (5 / 2)^2), # g/cm^3
     n = n_pct * 10000, #mg/kg
     c = c_pct * 10000 #mg/kg
-  )
+  ) |>
+  select(-n_pct, -c_pct, -mass_soilDry)
 ```
 
 -   ***c_pct:*** \[GIVEN\] Percentage of soil mass that is carbon (grams carbon/grams soil). Value between 0 and 100
@@ -145,7 +146,7 @@ soil_properties <-
 
 convert to individuals per m2
 
-Earthworms were sampled from two 0.06m^2 soil samples and totaled per plot to find the count. 
+Earthworms were sampled from two 0.06m^2 soil samples and totaled per plot to find the count.The total area for each measure is 0.12m^2 
 ```{r worms}
 
 worms <- 
@@ -160,7 +161,7 @@ worms <-
   select(plot, landuse, year, density, mass_density)
 ```
 
--   ***density*** number of earthworms observed per square meter
+-   ***density*** number of earthworms observed per square meter to a depth of 20cm after mustard treatment
 
 -   ***mass_density*** the average density of earthworm mass per square meter
 
@@ -183,13 +184,16 @@ arthropods <-
 
 -   ***organism*** microarthropod being viewed: all microarthropods, mites, springtails, or others
 
--   ***density*** number of organisms per square meter. We assume there are no microbes under the soil sample. 
+-   ***density*** number of organisms per square meter. We assume there are no microbes deeper than 5cm and that the population density in the top 5cm is representative of the population truly in the inhabitable surface area. Its like doing a census but we only count people who live in the first floor of buildings. 
 
 #### NEMATODES
 
+Nematodes were sampled and those numbers were projected to find the number of nematodes in 50 grams of fresh soil. 
+
+
 Task: convert data to ind./100 g dry soil
 
-gmc = (wet-dry) / dry dry = wet / (gmc +1)
+$$ GMC = \frac{wet-dry}{dry} ; dry = \frac{wet}{GMC +1} $$
 
 ```{r nematodes}
 nematodes <- 
@@ -199,26 +203,23 @@ nematodes <-
               select(landuse, year, plot, gmc)) |>
   mutate(
     dry = 50 / (gmc + 1),
-    nematode_density_dry = nematodes / dry,
-    nematode_estimate_100 = nematode_density_dry * 100
-  ) 
+    density = nematodes / dry,
+    estimate_100 = density * 100
+  ) |>
+  select(landuse, year, plot, density, estimate_100)
 ```
 
 -   ***nematodes:*** \[GIVEN\] estimated number of nematodes in 50g of fresh soil
 
--   ***gmc:*** \[GIVEN\] gravimetric_moisture_content
+-   ***density:*** number of nematodes per 1g of dry soil.
 
--   ***dry:*** amount of dry soil in the 50g fresh soil sample
-
--   ***nematode_density_dry:*** number of nematodes expected to be found in 1g of dry soil.
-
--   ***nematode_estimate_100:*** number of nematodes estimated to be found in 100g of soil
+-   ***estimate_100:*** number of nematodes estimated to be found in 100g of soil.
 
 #### DECOMPOSITION
 
 convert data to percent (already in percent?)
 
-```{r}
+```{r decomp}
 decomp <- data6 |>
   select(landuse, year, plot, pct_loss, decomp_constant)
 ```
@@ -237,7 +238,7 @@ pnp_dry = micrograms pnp / 1g dry soil
 
 we assume there is no interaction between soil moisture and pnp production
 
-```{r}
+```{r enzymes}
 enzymes <- 
   data6 |>
   select(landuse, year, plot, pnp_wet) |>
@@ -246,7 +247,8 @@ enzymes <-
   mutate(
     dry = 1 / (gmc + 1), 
     pnp_dry = pnp_wet / dry
-    )
+    ) |>
+  select(landuse, year, plot, pnp_dry)
   
 ```
 
@@ -262,7 +264,7 @@ calculate mbc according to the protocol
 
 special note: fumigated should be higher than non-fumigated. If it is not, swap the values.
 
-```{r}
+```{r mbc}
 mbc <- 
   data6 |>
   select(landuse, year, plot, c_fumigated, c_nonfumigated)|>
@@ -277,10 +279,18 @@ mbc <-
     cf = c_fumigated * vs / ms,
     cnf = c_nonfumigated * vs / ms,
     mbc = (cf-cnf) / .045 # 0.45 is k_ec value
-  )
+  ) |>
+  select(landuse, plot, year, mbc)
 ```
 
+
 #### EXPLORATORY DATA ANALYSIS
+
+IMPORTANT NOTE: 
+Nematode Density: number of nematodes *per 1g of dry soil*
+Worm Density:number of earthworms observed per square meter *until a depth of 20cm* after mustard treatment
+Microarthropod Density: organisms per square meter *until a depth of 5cm*
+
 
 No notable relationships
 ```{r ph_decomposition}
@@ -313,7 +323,6 @@ left_join(soil_properties, enzymes) |>
        x = 'pH-KCl',
        title = 'PNP Production and pH')
 ```
-
 
 ```{r ph_landuse}
 soil_properties |>
@@ -380,19 +389,6 @@ left_join(mbc, soil_properties) |>
   geom_point(aes(x = bulk_density, y = mbc, color = landuse)) 
 ```
 
-no clear relationship
-```{r gmc_wormDensity}
-# worms per square meter and soil moisture
-left_join(soil_properties, worms) |>
-  ggplot() +
-  geom_point(aes(x = gmc, y = density, color = landuse))
-
-# worm mass per square meter and soil moisture 
-left_join(soil_properties, worms) |>
-  ggplot() +
-  geom_point(aes(x = gmc, y = mass_density, color = landuse))
-```
-
 ```{r coorelationMatrix}
 correlation_matrix <- arthropods |>
   select(-count) |>
@@ -408,12 +404,12 @@ ggcorrplot(correlation_matrix,
            type = 'lower',
            lab = TRUE)
 ```
-
-ORGANISMS AND SOIL PROPERTIES
+###### Soil Properties 
+ORGANISMS
 ```{r nematode}
 nematodes |>
-  left_join(soil_properties, join_by(landuse, year, plot, gmc)) |>
-  select('density' = nematode_density_dry, c, n, ph, gmc, bulk_density) |>
+  left_join(soil_properties) |>
+  select(density, c, n, ph, gmc, bulk_density) |>
   pivot_longer(c:bulk_density,
                names_to = 'attribute',
                values_to = 'value')  |>
@@ -422,7 +418,7 @@ nematodes |>
   # geom_smooth(aes(y = density, x = value)) +
   facet_wrap(~attribute, scales = 'free')
 ```
-```{r worms_soilProperties}
+```{r worms}
 worms |>
   left_join(soil_properties) |>
   select(density, c, n, ph, gmc, bulk_density) |>
@@ -434,10 +430,10 @@ worms |>
   geom_smooth(aes(y = density, x = value)) +
   facet_wrap(~attribute, scales = 'free')
 ```
-```{r mar_soilProperties}
+```{r microarthropods}
 arthropods |>
   left_join(soil_properties) |>
-  select(organism, density, c, n, ph, gmc, bulk_density) |>
+  select(landuse, organism, density, c, n, ph, gmc, bulk_density) |>
   pivot_longer(c:bulk_density,
                names_to = 'attribute',
                values_to = 'value')  |>
@@ -446,27 +442,108 @@ arthropods |>
   geom_smooth(aes(y = density, x = value, color = organism)) +
   facet_wrap(organism~attribute, scales = 'free')
 ```
+```{r mbc}
+mbc |>
+  left_join(soil_properties) |>
+  pivot_longer(ph:c,
+               names_to = 'attribute',
+               values_to = 'value')  |>
+  ggplot(aes(y = mbc, x = value)) +
+  geom_point() +
+  geom_smooth() +
+  facet_wrap(~attribute, scales = 'free')
+```
 
 
-DECOPMOSITION RATE AND SOIL PROPERTIES
+DECOMPOSITION RATE
 ```{r}
 left_join(decomp, soil_properties) |>
   pivot_longer(cols = c(ph, gmc, bulk_density, c, n),
                names_to = 'attribute',
                values_to = 'value') |>
-  filter(landuse == 'forest') |>
+  # filter(landuse == 'forest') |>
   ggplot() +
   geom_point(aes(x = value, y = pct_loss, color = attribute)) +
   # geom_smooth(aes(x = value, y = pct_loss, color = attribute)) +
   facet_wrap(~attribute, scales = 'free')
 ```
 
+ENZYMES
+```{r}
+left_join(enzymes, soil_properties) |>
+  pivot_longer(
+    cols = c(ph, gmc, bulk_density, c, n),
+    names_to = 'attribute',
+    values_to = 'value'
+  ) |> 
+  ggplot (aes(x = value, y = pnp_dry, color = landuse)) +
+  geom_point() +
+  # geom_smooth() +
+  facet_wrap( ~ attribute, scales = 'free')
+```
+
 #### STATISTICAL SIGNIFICANCE
 ```{r libraries}
 source('custom_functions.R')
+library(multcomp)
 ```
 
+##### Soil Properties Compared Between Land Uses
+```{r}
+dat <- 
+  soil_properties |>
+  fct_relevel(landuse, c('cropland', 'grassland', 'forest'))
 
+
+dat |>
+    pivot_longer(cols = ph:c,
+              names_to = 'attribute',
+              values_to = 'value') |>
+  ggplot(aes(x = landuse, y = value)) +
+  geom_boxplot() +
+  facet_wrap(~attribute, scales = 'free')
+
+
+# make model
+model <- lm(c ~ bulk_density*landuse,
+            data = dat)
+print_equation(model, beta  = '𝛽')
+
+# test assumptions
+assumption_plots(model)
+residualplot(model)
+QQplot(model)
+
+# evaluate model
+summary(model)
+anova(model_reduced, model)
+
+
+# post hoc analysis
+old <- c()
+int <- c()
+young <- c()
+
+H <- rbind(
+  "old - int" = old-int, 
+  "young - int" = young-int, 
+  "young - old" = young-old
+)
+
+posthocs <- glht(model, linfct = H) 
+summary(posthocs)
+
+posthocs$df # degreees of freedom
+
+# make predictions
+# newdat <- data.frame()
+predict(model, 
+        newdata = newdat,
+        level = 0.95,
+        interval = 'prediction'or 'confidence')
+```
+
+##### Enzyme Activity
 Based on β-glucosidase activity measurements across different
 land use types, which ecosystem demonstrates the most efficient
 carbon cycling and why is this enzyme activity a reliable indicator
@@ -475,7 +552,7 @@ for this assessment?
 
 ```
 
-
+##### Microbial Biomass
 How does microbial biomass in forest soils compare to
 agricultural or grassland soils, and what is the relationship with
 soil bulk density?
@@ -492,11 +569,12 @@ anova_bd <- aov(bulk_density ~ landuse, data = dataset1)
 summary(anova_bd)
 TukeyHSD(anova_bd)
 
-# mbc is signifcantly different between all landuses
+# mbc is significantly different between all landuses
 anova_mbc <- aov(mbc ~ landuse, data = dataset1)
 summary(anova_mbc)
 TukeyHSD(anova_mbc)
 
 
 ```
+
 
